@@ -1,13 +1,17 @@
-name: Build Off-CCD
+name: Build and Release OCCD
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    tags:
+      - "v*" # 当你推送以 v 开头的标签时（如 v1.0, v1.1）触发
+  workflow_dispatch: # 允许手动触发
+
+permissions:
+  contents: write  # 必须开启写入权限，否则无法创建 Release
 
 jobs:
   build:
-    runs-on: windows-latest  # 必须在 Windows 环境下编译
+    runs-on: windows-latest
 
     steps:
       - name: Checkout code
@@ -16,17 +20,18 @@ jobs:
       - name: AHK2Exe GitHub Action
         uses: MohamedSaidSallam/AHK2Exe-GitHub-Action@v1
         with:
-          # 脚本入口文件
           in: Off-CCD.ahk
-          # 输出文件名
           out: Off-CCD.exe
-          # 指定图标文件
           icon: logo.ico
-          # 指定 AHK 版本 (默认就是 v2.0.19，符合你的代码)
           ahk_version_tag: v2.0.19
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Create Release and Upload EXE
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') # 仅在有标签推送时执行发布
         with:
-          name: Off-CCD-v1.0
-          path: Off-CCD.exe
+          files: Off-CCD.exe
+          # 自动生成版本说明
+          generate_release_notes: true
+          # 设置为正式版
+          draft: false
+          prerelease: false
