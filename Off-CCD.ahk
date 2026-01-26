@@ -11,20 +11,21 @@ global TotalThreads := Integer(EnvGet("NUMBER_OF_PROCESSORS"))
 global Lang := Map()
 global Settings := {AutoStart: 0, Silent: 0, HideTray: 0, Language: "zh"}
 global MasterProcList := [] 
-global LastFilteredCount := 0 ; 用于记录上次筛选结果数量，减少刷新频率
+global LastFilteredCount := 0 
 
-; 语言文本定义
 InitLanguage(l) {
     if (l == "zh") {
         Lang["AutoStart"] := "开机自启动", Lang["SilentStart"] := "静默启动", Lang["HideTray"] := "隐藏托盘图标"
         Lang["Settings"] := "设置", Lang["Lang"] := "语言", Lang["Target"] := "目标程序:"
-        Lang["Core0"] := "含核心0", Lang["CCD1"] := "绑CCD1", Lang["SMT"] := "禁用超线程", Lang["HighPri"] := "高优先级"
+        Lang["Core0"] := "含核心0", Lang["CCD0"] := "仅CCD0", Lang["CCD1"] := "仅CCD1"
+        Lang["SMT"] := "禁用超线程", Lang["HighPri"] := "高优先级"
         Lang["GameMode"] := "竞技模式", Lang["BgLoad"] := "后台负载", Lang["Save"] := "保存配置"
         Lang["Show"] := "显示界面", Lang["Exit"] := "退出"
     } else {
         Lang["AutoStart"] := "Start on Boot", Lang["SilentStart"] := "Silent Start", Lang["HideTray"] := "Hide Tray Icon"
         Lang["Settings"] := "Settings", Lang["Lang"] := "Language", Lang["Target"] := "Target Process:"
-        Lang["Core0"] := "Incl Core0", Lang["CCD1"] := "Bind CCD1", Lang["SMT"] := "Disable SMT", Lang["HighPri"] := "High Priority"
+        Lang["Core0"] := "Incl Core0", Lang["CCD0"] := "Only CCD0", Lang["CCD1"] := "Only CCD1"
+        Lang["SMT"] := "Disable SMT", Lang["HighPri"] := "High Priority"
         Lang["GameMode"] := "Gaming Mode", Lang["BgLoad"] := "Background Load", Lang["Save"] := "Save Config"
         Lang["Show"] := "Show UI", Lang["Exit"] := "Exit"
     }
@@ -79,17 +80,20 @@ MyGui.MenuBar := Menus
 MyGui.SetFont("s10", "Microsoft YaHei")
 MyGui.Add("Text", "w80", Lang["Target"])
 
-; 下拉框：首字母优先匹配
+; 下拉框
 MasterProcList := GetCombinedProcessList()
 ProgCombo := MyGui.Add("ComboBox", "vProgName x+10 w260", MasterProcList)
 ProgCombo.OnEvent("Change", HandleProgChange)
 
-CheckCore0 := MyGui.Add("Checkbox", "vCore0 xm y+20", Lang["Core0"])
+; 第一行开关：CCD选择
+CheckCCD0  := MyGui.Add("Checkbox", "vCCD0 xm y+20", Lang["CCD0"])
 CheckCCD1  := MyGui.Add("Checkbox", "vCCD1 x+20", Lang["CCD1"])
+; 第二行开关：功能选项
+CheckCore0 := MyGui.Add("Checkbox", "vCore0 x+20", Lang["Core0"])
 CheckSMT   := MyGui.Add("Checkbox", "vSMT x+20", Lang["SMT"])
-CheckHigh  := MyGui.Add("Checkbox", "vHigh x+20", Lang["HighPri"])
+CheckHigh  := MyGui.Add("Checkbox", "vHigh xm y+10", Lang["HighPri"]) ; 换行显示更清晰
 
-for ctrl in [CheckCore0, CheckCCD1, CheckSMT] {
+for ctrl in [CheckCore0, CheckCCD0, CheckCCD1, CheckSMT] {
     ctrl.OnEvent("Click", UpdateMaskDisplay)
 }
 
@@ -118,7 +122,7 @@ if (Settings.Silent == 0) {
 SetTimer(ProcessMonitor, 3000)
 
 ; ==============================================================================
-; 逻辑处理：首字母过滤与鼠标抖动修复
+; 逻辑处理：筛选与交互
 ; ==============================================================================
 
 HandleProgChange(GuiCtrl, *) {
@@ -130,11 +134,10 @@ HandleProgChange(GuiCtrl, *) {
     userInput := GuiCtrl.Text
     uLen := StrLen(userInput)
     
-    ; 1. 执行首字母起始筛选 (Starts With)
+    ; 1. 首字母筛选
     filtered := []
     if (userInput != "") {
         for name in MasterProcList {
-            ; 检查字符串开头是否匹配用户输入 (不区分大小写)
             if (SubStr(name, 1, uLen) = userInput) {
                 filtered.Push(name)
             }
@@ -143,29 +146,25 @@ HandleProgChange(GuiCtrl, *) {
         filtered := MasterProcList
     }
     
-    ; 【鼠标消失/闪烁修复逻辑】
-    ; 只有当筛选出的结果数量发生变化时，才真正刷新下拉列表。
-    ; 这极大地减少了控件重绘频率，从而保护鼠标指针不消失。
     global LastFilteredCount
     if (filtered.Length != LastFilteredCount) {
         GuiCtrl.Delete()
         if (filtered.Length > 0) {
             GuiCtrl.Add(filtered)
-            ; 仅在未展开时尝试展开，减少消息干扰
             if (!SendMessage(0x0157, 0, 0, GuiCtrl.Hwnd)) {
-                SendMessage(0x014F, 1, 0, GuiCtrl.Hwnd) ; CB_SHOWDROPDOWN
+                SendMessage(0x014F, 1, 0, GuiCtrl.Hwnd) 
             }
         }
         LastFilteredCount := filtered.Length
     }
     
-    ; 保持文字和光标末尾对齐
     GuiCtrl.Text := userInput 
-    SendMessage(0x0142, 0, (uLen << 16) | uLen, GuiCtrl.Hwnd) ; CB_SETEDITSEL
+    SendMessage(0x0142, 0, (uLen << 16) | uLen, GuiCtrl.Hwnd) 
     
-    ; 2. 识别历史策略
+    ; 2. 识别历史策略 (增加 CCD0 读取)
     try {
         CheckCore0.Value := Integer(IniRead(IniFile, userInput, "Core0", 1))
+        CheckCCD0.Value  := Integer(IniRead(IniFile, userInput, "CCD0", 0)) ; 新增
         CheckCCD1.Value  := Integer(IniRead(IniFile, userInput, "CCD1", 0))
         CheckSMT.Value   := Integer(IniRead(IniFile, userInput, "SMT", 0))
         CheckHigh.Value  := Integer(IniRead(IniFile, userInput, "High", 0))
@@ -207,23 +206,36 @@ RefreshMasterList() {
 }
 
 ; ==============================================================================
-; 核心逻辑运算 (AMD CCD1 专用)
+; 核心 Mask 运算逻辑 (更新双CCD逻辑)
 ; ==============================================================================
 
-CalculateMask(c0, c1, smt) {
-    if (c1 == 1) {
-        half := TotalThreads // 2
-        mask := ((1 << half) - 1) << half ; 后一半核心
-    } else {
+CalculateMask(c0, ccd0, ccd1, smt) {
+    half := TotalThreads // 2
+    mask := 0
+    
+    ; 1. CCD 基础选区
+    if (ccd0 == 1) {
+        ; 累加前半部分核心
+        mask |= ((1 << half) - 1)
+    }
+    if (ccd1 == 1) {
+        ; 累加后半部分核心
+        mask |= (((1 << half) - 1) << half)
+    }
+    
+    ; 如果都没选(或都选了导致溢出)，默认全选
+    if (mask == 0) {
         mask := (1 << TotalThreads) - 1
     }
     
+    ; 2. 核心0 独立控制 (最高优先级)
     if (c0 == 1) {
-        mask |= 1   ; 无论如何加上 Core 0 (Bit 0)
+        mask |= 1   ; 强制点亮 Core 0
     } else {
-        mask &= ~1  ; 无论如何去掉 Core 0
+        mask &= ~1  ; 强制熄灭 Core 0
     }
     
+    ; 3. 禁用超线程 (保留偶数位)
     if (smt == 1) {
         smt_mask := 0
         Loop (TotalThreads // 2) {
@@ -231,11 +243,12 @@ CalculateMask(c0, c1, smt) {
         }
         mask &= smt_mask
     }
+    
     return (mask == 0) ? 1 : mask
 }
 
 UpdateMaskDisplay(*) {
-    mask := CalculateMask(CheckCore0.Value, CheckCCD1.Value, CheckSMT.Value)
+    mask := CalculateMask(CheckCore0.Value, CheckCCD0.Value, CheckCCD1.Value, CheckSMT.Value)
     MaskText.Value := "Mask: 0x" . Format("{:08X}", mask)
 }
 
@@ -261,10 +274,12 @@ ProcessMonitor() {
         if (processes.Count > 0) {
             try {
                 c0 := Integer(IniRead(IniFile, procName, "Core0", 1))
-                c1 := Integer(IniRead(IniFile, procName, "CCD1", 0))
+                cd0 := Integer(IniRead(IniFile, procName, "CCD0", 0)) ; 新增
+                cd1 := Integer(IniRead(IniFile, procName, "CCD1", 0))
                 sm := Integer(IniRead(IniFile, procName, "SMT", 0))
                 hi := Integer(IniRead(IniFile, procName, "High", 0))
-                tMask := CalculateMask(c0, c1, sm)
+                
+                tMask := CalculateMask(c0, cd0, cd1, sm)
                 
                 for proc in processes {
                     try {
@@ -282,7 +297,7 @@ ProcessMonitor() {
 }
 
 ; ==============================================================================
-; 按钮功能
+; 预设与动作
 ; ==============================================================================
 
 SaveConfig(*) {
@@ -291,6 +306,7 @@ SaveConfig(*) {
         return
     }
     IniWrite(CheckCore0.Value, IniFile, name, "Core0")
+    IniWrite(CheckCCD0.Value,  IniFile, name, "CCD0")
     IniWrite(CheckCCD1.Value,  IniFile, name, "CCD1")
     IniWrite(CheckSMT.Value,   IniFile, name, "SMT")
     IniWrite(CheckHigh.Value,  IniFile, name, "High")
@@ -298,7 +314,9 @@ SaveConfig(*) {
 }
 
 SetGamePreset(*) {
+    ; 游戏模式：仅CCD0 + 关闭SMT + 高优先级 + (通常游戏不含核心0)
     CheckCore0.Value := 0
+    CheckCCD0.Value := 1
     CheckCCD1.Value := 0
     CheckSMT.Value := 1
     CheckHigh.Value := 1
@@ -306,7 +324,9 @@ SetGamePreset(*) {
 }
 
 SetBgPreset(*) {
+    ; 后台负载：含核心0 + 仅CCD1 + (保留SMT以增强多任务)
     CheckCore0.Value := 1
+    CheckCCD0.Value := 0
     CheckCCD1.Value := 1
     CheckSMT.Value := 0
     CheckHigh.Value := 0
