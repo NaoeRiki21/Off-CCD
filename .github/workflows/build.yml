@@ -13,31 +13,36 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download AHK v2 and Compiler
+      - name: Download AHK v2 and Compiler from GitHub
         shell: pwsh
         run: |
           # 创建工具目录
-          New-Item -ItemType Directory -Force -Path ".\tools"
+          New-Item -ItemType Directory -Force -Path ".\tools\ahk"
 
-          # 1. 下载 AutoHotkey v2 运行环境 (v2.0.11)
-          Write-Host "Downloading AutoHotkey v2..."
-          Invoke-WebRequest -Uri "https://www.autohotkey.com/download/ahk-v2.zip" -OutFile ".\tools\ahk-v2.zip"
-          Expand-Archive -Path ".\tools\ahk-v2.zip" -DestinationPath ".\tools\ahk"
+          # 1. 从 GitHub 镜像下载 AutoHotkey v2 (避免官网 Cloudflare 拦截)
+          Write-Host "Downloading AutoHotkey v2 from GitHub..."
+          $ahkUrl = "https://github.com/AutoHotkey/AutoHotkey/releases/download/v2.0.11/AutoHotkey_2.0.11.zip"
+          Invoke-WebRequest -Uri $ahkUrl -OutFile ".\tools\ahk.zip"
+          Expand-Archive -Path ".\tools\ahk.zip" -DestinationPath ".\tools\ahk"
 
-          # 2. 从官方仓库下载 Ahk2Exe 编译器
+          # 2. 从 GitHub 下载 Ahk2Exe 编译器
           Write-Host "Downloading Ahk2Exe Compiler..."
-          Invoke-WebRequest -Uri "https://github.com/AutoHotkey/Ahk2Exe/releases/latest/download/Ahk2Exe.zip" -OutFile ".\tools\Ahk2Exe.zip"
-          Expand-Archive -Path ".\tools\Ahk2Exe.zip" -DestinationPath ".\tools\ahk\Compiler"
+          $compilerUrl = "https://github.com/AutoHotkey/Ahk2Exe/releases/latest/download/Ahk2Exe.zip"
+          Invoke-WebRequest -Uri $compilerUrl -OutFile ".\tools\compiler.zip"
+          Expand-Archive -Path ".\tools\compiler.zip" -DestinationPath ".\tools\ahk\Compiler"
 
       - name: Compile Script
         shell: pwsh
         run: |
+          # 编译器路径
           $compiler = ".\tools\ahk\Compiler\Ahk2Exe.exe"
-          $baseExe = ".\tools\ahk\AutoHotkey64.exe"  # 指定 64 位 v2 作为底包
+          # v2 解释器路径 (ZIP包解压后直接在根目录)
+          $baseExe = ".\tools\ahk\v2\AutoHotkey64.exe" 
+          # 如果 v2 文件夹不存在，尝试根目录
+          if (-not (Test-Path $baseExe)) { $baseExe = ".\tools\ahk\AutoHotkey64.exe" }
 
-          Write-Host "Compiling Off-CCD.ahk..."
+          Write-Host "Compiling with base: $baseExe"
           
-          # 判断是否有图标
           if (Test-Path "logo.ico") {
             & $compiler /in "Off-CCD.ahk" /out "Off-CCD.exe" /icon "logo.ico" /base $baseExe /compress 0
           } else {
