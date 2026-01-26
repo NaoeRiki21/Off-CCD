@@ -19,17 +19,24 @@ jobs:
           version: '2.0'
 
       - name: Compile Script
+        shell: pwsh
         run: |
-          # 检查 logo.ico 是否存在，如果不存在编译会报错
-          if (Test-Path "logo.ico") {
-            "C:\Program Files\AutoHotkey\Compiler\Ahk2Exe.exe" /in "Off-CCD.ahk" /out "Off-CCD.exe" /icon "logo.ico" /compress 0
-          } else {
-            Write-Error "logo.ico not found in repository root!"
+          $ahkDir = Join-Path $env:ProgramFiles "AutoHotkey"
+          $compiler = Get-ChildItem -Path $ahkDir -Filter "Ahk2Exe.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          
+          if ($null -eq $compiler) {
+            Write-Error "Could not find Ahk2Exe.exe!"
             exit 1
+          }
+
+          if (Test-Path "logo.ico") {
+            & $compiler /in "Off-CCD.ahk" /out "Off-CCD.exe" /icon "logo.ico" /compress 0
+          } else {
+            & $compiler /in "Off-CCD.ahk" /out "Off-CCD.exe" /compress 0
           }
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Off-CCD-v1.0
+          name: Off-CCD-EXE
           path: Off-CCD.exe
