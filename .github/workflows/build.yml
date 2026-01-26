@@ -1,4 +1,4 @@
-name: Build Off-CCD EXE with Logo
+name: Build Off-CCD
 
 on:
   push:
@@ -7,57 +7,25 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-latest  # 必须在 Windows 环境下编译
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Build Environment
-        shell: pwsh
-        run: |
-          # 1. 创建干净的目录
-          $tools = New-Item -ItemType Directory -Force -Path ".\build_tools"
-          $runtimeDir = New-Item -ItemType Directory -Force -Path "$tools\runtime"
-          $compilerDir = New-Item -ItemType Directory -Force -Path "$tools\compiler"
+      - name: AHK2Exe GitHub Action
+        uses: MohamedSaidSallam/AHK2Exe-GitHub-Action@v1
+        with:
+          # 脚本入口文件
+          in: Off-CCD.ahk
+          # 输出文件名
+          out: Off-CCD.exe
+          # 指定图标文件
+          icon: logo.ico
+          # 指定 AHK 版本 (默认就是 v2.0.19，符合你的代码)
+          ahk_version_tag: v2.0.19
 
-          # 2. 下载 AutoHotkey v2.0.11 核心 (用于作为 EXE 的底包)
-          Write-Host "Downloading AutoHotkey v2 Core..."
-          $ahkUrl = "https://github.com/AutoHotkey/AutoHotkey/releases/download/v2.0.11/AutoHotkey_2.0.11.zip"
-          Invoke-WebRequest -Uri $ahkUrl -OutFile "$tools\ahk.zip" -UseBasicParsing -ErrorAction Stop
-          Expand-Archive -Path "$tools\ahk.zip" -DestinationPath $runtimeDir
-
-          # 3. 下载 Ahk2Exe 编译器 (修正版本号为 v1.1.37.01)
-          Write-Host "Downloading Ahk2Exe Compiler..."
-          $compilerUrl = "https://github.com/AutoHotkey/Ahk2Exe/releases/download/v1.1.37.01/Ahk2Exe.zip"
-          Invoke-WebRequest -Uri $compilerUrl -OutFile "$tools\compiler.zip" -UseBasicParsing -ErrorAction Stop
-          Expand-Archive -Path "$tools\compiler.zip" -DestinationPath $compilerDir
-
-      - name: Compile EXE
-        shell: pwsh
-        run: |
-          # 动态定位编译器和底包
-          $compiler = ".\build_tools\compiler\Ahk2Exe.exe"
-          
-          # v2 的压缩包解压后通常会在 v2 文件夹下，或者根目录下
-          $baseExe = ".\build_tools\runtime\v2\AutoHotkey64.exe"
-          if (-not (Test-Path $baseExe)) { $baseExe = ".\build_tools\runtime\AutoHotkey64.exe" }
-
-          Write-Host "Compiler found at: $compiler"
-          Write-Host "Base EXE found at: $baseExe"
-
-          # 执行编译指令
-          $params = @("/in", "Off-CCD.ahk", "/out", "Off-CCD.exe", "/base", $baseExe, "/compress", "0")
-          
-          if (Test-Path "logo.ico") {
-              Write-Host "Logo found, applying icon..."
-              $params += @("/icon", "logo.ico")
-          }
-
-          # 使用 & 符号调用外部程序
-          & $compiler $params
-
-      - name: Upload Finished EXE
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Off-CCD-v1.0
