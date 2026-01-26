@@ -13,49 +13,51 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download AHK v2 and Compiler (Fixed Link)
+      - name: Setup Build Environment
         shell: pwsh
         run: |
-          # 1. 创建并进入工具目录
-          $toolsDir = New-Item -ItemType Directory -Force -Path ".\ahk_tools"
-          
-          # 2. 下载 AutoHotkey v2.0.11 (固定版本，最稳)
-          Write-Host "Downloading AutoHotkey v2..."
+          # 1. 创建干净的目录
+          $tools = New-Item -ItemType Directory -Force -Path ".\build_tools"
+          $runtimeDir = New-Item -ItemType Directory -Force -Path "$tools\runtime"
+          $compilerDir = New-Item -ItemType Directory -Force -Path "$tools\compiler"
+
+          # 2. 下载 AutoHotkey v2.0.11 核心 (用于作为 EXE 的底包)
+          Write-Host "Downloading AutoHotkey v2 Core..."
           $ahkUrl = "https://github.com/AutoHotkey/AutoHotkey/releases/download/v2.0.11/AutoHotkey_2.0.11.zip"
-          Invoke-WebRequest -Uri $ahkUrl -OutFile "$toolsDir\ahk.zip" -UseBasicParsing
-          Expand-Archive -Path "$toolsDir\ahk.zip" -DestinationPath "$toolsDir\ahk_runtime"
+          Invoke-WebRequest -Uri $ahkUrl -OutFile "$tools\ahk.zip" -UseBasicParsing -ErrorAction Stop
+          Expand-Archive -Path "$tools\ahk.zip" -DestinationPath $runtimeDir
 
-          # 3. 下载 Ahk2Exe 编译器 v1.1.37.02 (固定版本)
+          # 3. 下载 Ahk2Exe 编译器 (修正版本号为 v1.1.37.01)
           Write-Host "Downloading Ahk2Exe Compiler..."
-          $compilerUrl = "https://github.com/AutoHotkey/Ahk2Exe/releases/download/v1.1.37.02/Ahk2Exe.zip"
-          Invoke-WebRequest -Uri $compilerUrl -OutFile "$toolsDir\compiler.zip" -UseBasicParsing
-          
-          # 创建编译器专门目录并解压
-          $compilerDir = New-Item -ItemType Directory -Force -Path "$toolsDir\ahk_runtime\Compiler"
-          Expand-Archive -Path "$toolsDir\compiler.zip" -DestinationPath $compilerDir
+          $compilerUrl = "https://github.com/AutoHotkey/Ahk2Exe/releases/download/v1.1.37.01/Ahk2Exe.zip"
+          Invoke-WebRequest -Uri $compilerUrl -OutFile "$tools\compiler.zip" -UseBasicParsing -ErrorAction Stop
+          Expand-Archive -Path "$tools\compiler.zip" -DestinationPath $compilerDir
 
-      - name: Compile Script
+      - name: Compile EXE
         shell: pwsh
         run: |
-          # 定义路径
-          $toolsDir = ".\ahk_tools"
-          $compiler = "$toolsDir\ahk_runtime\Compiler\Ahk2Exe.exe"
-          $baseExe = "$toolsDir\ahk_runtime\v2\AutoHotkey64.exe"
+          # 动态定位编译器和底包
+          $compiler = ".\build_tools\compiler\Ahk2Exe.exe"
           
-          # 如果解压结构不同，尝试另一个路径
-          if (-not (Test-Path $baseExe)) { $baseExe = "$toolsDir\ahk_runtime\AutoHotkey64.exe" }
+          # v2 的压缩包解压后通常会在 v2 文件夹下，或者根目录下
+          $baseExe = ".\build_tools\runtime\v2\AutoHotkey64.exe"
+          if (-not (Test-Path $baseExe)) { $baseExe = ".\build_tools\runtime\AutoHotkey64.exe" }
 
-          Write-Host "Using Compiler: $compiler"
-          Write-Host "Using Base EXE: $baseExe"
+          Write-Host "Compiler found at: $compiler"
+          Write-Host "Base EXE found at: $baseExe"
 
-          # 执行编译
+          # 执行编译指令
+          $params = @("/in", "Off-CCD.ahk", "/out", "Off-CCD.exe", "/base", $baseExe, "/compress", "0")
+          
           if (Test-Path "logo.ico") {
-            & $compiler /in "Off-CCD.ahk" /out "Off-CCD.exe" /icon "logo.ico" /base $baseExe /compress 0
-          } else {
-            & $compiler /in "Off-CCD.ahk" /out "Off-CCD.exe" /base $baseExe /compress 0
+              Write-Host "Logo found, applying icon..."
+              $params += @("/icon", "logo.ico")
           }
 
-      - name: Upload Artifact
+          # 使用 & 符号调用外部程序
+          & $compiler $params
+
+      - name: Upload Finished EXE
         uses: actions/upload-artifact@v4
         with:
           name: Off-CCD-v1.0
