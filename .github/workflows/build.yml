@@ -1,0 +1,35 @@
+name: Build Off-CCD EXE with Logo
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup AutoHotkey
+        uses: mmulthaupt/setup-autohotkey@v2
+        with:
+          version: '2.0'
+
+      - name: Compile Script
+        run: |
+          # 检查 logo.ico 是否存在，如果不存在编译会报错
+          if (Test-Path "logo.ico") {
+            "C:\Program Files\AutoHotkey\Compiler\Ahk2Exe.exe" /in "Off-CCD.ahk" /out "Off-CCD.exe" /icon "logo.ico" /compress 0
+          } else {
+            Write-Error "logo.ico not found in repository root!"
+            exit 1
+          }
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Off-CCD-v1.0
+          path: Off-CCD.exe
