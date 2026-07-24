@@ -36,6 +36,13 @@ Off-CCD (OCCD) 是一款基于 AutoHotkey v2 的轻量级 CPU 相关性与优先
    - 建议在菜单栏“设置”中开启“开机自启动”和“静默启动”。
    - 提示：如果您同时开启了“静默启动”和“隐藏托盘图标”，只需再次手动双击运行一次 `Off-CCD` 程序，即可强制呼出主界面。
 
+### 卸载与还原
+本程序为纯净绿色软件，对 CPU 核心的修改仅在内存中即时生效。如需彻底卸载：
+1. 在程序的“设置”菜单中，**取消勾选“开机自启动”**（这会自动清除系统的计划任务）。
+2. 在“设置”菜单中点击“退出”彻底关闭程序。
+3. **重启电脑**（重启后，所有被修改过核心的程序都会自动恢复为 Windows 默认的全核心调度，不留任何后遗症）。
+4. 删除存放目录下的 `Off-CCD.exe` 和 `ProcessConfig.ini` 文件即可。
+
 ---
 
 ## English Description
@@ -66,6 +73,13 @@ Compared to the resource-heavy Process Lasso, OCCD offers:
 4. Background Operation:
    - Enable "Start on Boot" and "Silent Start" in the Settings menu for fully automatic background operation.
    - Tip: If you enable "Silent Start" and "Hide Tray Icon" simultaneously, simply double-click the `Off-CCD` program again to force the interface to show.
+
+### Uninstallation & Reset
+This is a portable application. CPU affinity changes are temporary and exist only in memory. To completely remove the app and revert all changes:
+1. Open the app, go to the "Settings" menu, and **uncheck "Start on Boot"** (this automatically removes the Scheduled Task).
+2. Click "Exit" in the "Settings" menu to completely close the program.
+3. **Restart your computer** (rebooting clears the memory and resets all CPU affinities back to Windows defaults).
+4. Delete the `Off-CCD.exe` executable and the generated `ProcessConfig.ini` configuration file.
 
 ---
 
