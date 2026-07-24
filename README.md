@@ -20,20 +20,21 @@ Off-CCD (OCCD) 是一款基于 AutoHotkey v2 的轻量级 CPU 相关性与优先
 ### 核心功能
 - 智能识别：实时感知系统运行进程，支持模糊筛选，选中即自动加载历史策略。
 - 自动化处理：支持处理同名多进程（如 QQ、Chrome 的所有子进程），每 3 秒循环巡检。
-- 策略预设：
-  - 竞技模式：禁用超线程 (SMT) + 高优先级。
-  - 后台负载：含核心 0 + 绑定 CCD1，将干扰任务彻底隔离。
+- 自定义预设槽位：
+  - 提供 3 个类似微星 Afterburner 的预设槽位，左键读取，右键保存或重命名。
+- 系统核心保护：禁止修改 explorer.exe 等关键系统进程，防止因 Windows 继承机制导致所有程序被错误限制。
+- 真正静默自启：通过计划任务实现开机静默且最高权限自启，彻底告别 UAC 弹窗烦恼。
 
 ### 使用说明
 1. 下载运行：从 Releases 下载 Off-CCD.exe。(报毒忽略即可)
-2. 管理员权限：必须右键选择“以管理员身份运行”，否则程序无权修改其他进程的相关性。
+2. 自动提权：直接双击运行即可，程序会自动请求所需的管理员权限。
 3. 配置进程：
    - 在“目标程序”输入框开始输入，列表会根据首字母自动筛选当前运行的进程。
-   - 选中目标后，勾选需要的核心策略或直接点击预设按钮。
-   - 点击“保存配置”，该策略即刻生效并存入本地配置文件。
+   - 选中目标后，勾选需要的核心分配策略。
+   - 鼠标右键点击任意“预设”按钮可将当前配置存入槽位并可重命名；鼠标左键点击即可快速读取预设。
 4. 后台运行：
    - 建议在菜单栏“设置”中开启“开机自启动”和“静默启动”。
-   - 开启后，程序会最小化至托盘并在后台自动维护所有已保存的进程策略。
+   - 提示：如果您同时开启了“静默启动”和“隐藏托盘图标”，只需再次手动双击运行一次 `Off-CCD` 程序，即可强制呼出主界面。
 
 ---
 
@@ -50,20 +51,21 @@ Compared to the resource-heavy Process Lasso, OCCD offers:
 ### Key Features
 - Smart Recognition: Real-time detection of running processes. Filters as you type and restores saved policies upon selection.
 - Full Automation: Handles multi-instance programs (e.g., all child processes of QQ or Chrome) via WMI scanning every 3 seconds.
-- Strategy Presets:
-  - Gaming Mode: Disable SMT + High Priority.
-  - Background Load: Include Core 0 + Bind CCD1 to isolate auxiliary tasks.
+- Custom Presets (Afterburner Style):
+  - 3 customizable slots. Left-click to load, Right-click to save or rename.
+- System Process Protection: Prevents modifying core affinity for critical processes (like explorer.exe) to avoid unwanted inheritance to all child programs.
+- True Silent Auto-Start: Uses Task Scheduler to auto-run on boot with highest privileges, bypassing UAC prompts entirely.
 
 ### Instructions
 1. Download: Get the latest Off-CCD.exe from the Releases page.
-2. Admin Rights: You must right-click and select "Run as Administrator" to grant the utility permission to modify process affinity.
+2. Auto-Elevation: Double-click to run. It will automatically request administrator privileges needed to modify process affinities.
 3. Configure Processes:
-   - Start typing in the "Target Process" box; the list will automatically filter running processes based on your input.
-   - Select your target, check the desired affinity options, or use a preset button.
-   - Click "Save Config" to apply the strategy and save it to the local configuration file.
+   - Start typing in the "Target Process" box; the list will automatically filter running processes.
+   - Select your target, check the desired affinity options.
+   - Right-click any Preset button to save your configuration to that slot, or Left-click to load a saved preset.
 4. Background Operation:
-   - It is recommended to enable "Start on Boot" and "Silent Start" in the Settings menu.
-   - Once configured, the app will run in the tray and automatically maintain saved policies for you.
+   - Enable "Start on Boot" and "Silent Start" in the Settings menu for fully automatic background operation.
+   - Tip: If you enable "Silent Start" and "Hide Tray Icon" simultaneously, simply double-click the `Off-CCD` program again to force the interface to show.
 
 ---
 

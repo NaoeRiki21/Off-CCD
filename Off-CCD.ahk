@@ -1,6 +1,13 @@
-﻿#Requires AutoHotkey v2.0
+#Requires AutoHotkey v2.0
 #SingleInstance Force
 SetWorkingDir A_ScriptDir
+
+if not A_IsAdmin {
+    try {
+        Run '*RunAs "' A_ScriptFullPath '"'
+    }
+    ExitApp
+}
 
 ; ==============================================================================
 ; 全局变量与环境初始化
@@ -11,23 +18,21 @@ global TotalThreads := Integer(EnvGet("NUMBER_OF_PROCESSORS"))
 global Lang := Map()
 global Settings := {AutoStart: 0, Silent: 0, HideTray: 0, Language: "zh"}
 global MasterProcList := [] 
-global LastFilteredCount := 0 
-global CustomMode := 0 
-
+global LastFilteredCount := 0
 InitLanguage(l) {
     if (l == "zh") {
         Lang["AutoStart"] := "开机自启动", Lang["SilentStart"] := "静默启动", Lang["HideTray"] := "隐藏托盘图标"
         Lang["Settings"] := "设置", Lang["Lang"] := "语言", Lang["Target"] := "目标程序:"
         Lang["Core0"] := "含核心0", Lang["CCD0"] := "仅CCD0", Lang["CCD1"] := "仅CCD1"
         Lang["SMT"] := "禁用超线程", Lang["HighPri"] := "高优先级"
-        Lang["GameMode"] := "竞技模式", Lang["BgLoad"] := "后台负载", Lang["Custom"] := "自定义核心", Lang["Save"] := "保存配置"
+        Lang["SaveToPreset"] := "保存到该预设", Lang["RenamePreset"] := "重命名预设", Lang["Saved"] := "保存成功", Lang["Save"] := "保存配置", Lang["EnterNewName"] := "请输入新名称："
         Lang["Show"] := "显示界面", Lang["Exit"] := "退出"
     } else {
         Lang["AutoStart"] := "Start on Boot", Lang["SilentStart"] := "Silent Start", Lang["HideTray"] := "Hide Tray Icon"
         Lang["Settings"] := "Settings", Lang["Lang"] := "Language", Lang["Target"] := "Target Process:"
         Lang["Core0"] := "Incl Core0", Lang["CCD0"] := "Only CCD0", Lang["CCD1"] := "Only CCD1"
         Lang["SMT"] := "Disable SMT", Lang["HighPri"] := "High Priority"
-        Lang["GameMode"] := "Gaming Mode", Lang["BgLoad"] := "Background Load", Lang["Custom"] := "Custom Cores", Lang["Save"] := "Save Config"
+        Lang["SaveToPreset"] := "Save to Preset", Lang["RenamePreset"] := "Rename", Lang["Saved"] := "Saved Successfully", Lang["Save"] := "Save Config", Lang["EnterNewName"] := "Enter new name:"
         Lang["Show"] := "Show UI", Lang["Exit"] := "Exit"
     }
 }
@@ -54,9 +59,13 @@ Menus := MenuBar()
 SetMenu := Menu()
 SetMenu.Add(Lang["AutoStart"], ToggleAutoStart)
 try {
-    RegRead("HKCU\Software\Microsoft\Windows\CurrentVersion\Run", AppName)
-    Settings.AutoStart := 1
-    SetMenu.Check(Lang["AutoStart"])
+    exitCode := RunWait('schtasks /Query /TN "Off-CCD_AutoStart"', , "Hide")
+    if (exitCode == 0) {
+        Settings.AutoStart := 1
+        SetMenu.Check(Lang["AutoStart"])
+    } else {
+        Settings.AutoStart := 0
+    }
 } catch {
     Settings.AutoStart := 0
 }
@@ -93,18 +102,23 @@ CheckCCD1  := MyGui.Add("Checkbox", "vCCD1 x+20", Lang["CCD1"])
 CheckCore0 := MyGui.Add("Checkbox", "vCore0 x+20", Lang["Core0"])
 CheckSMT   := MyGui.Add("Checkbox", "vSMT x+20", Lang["SMT"])
 CheckHigh  := MyGui.Add("Checkbox", "vHigh xm y+10", Lang["HighPri"]) ; 换行显示更清晰
-CustomMode := 0
 
 for ctrl in [CheckCore0, CheckCCD0, CheckCCD1, CheckSMT] {
     ctrl.OnEvent("Click", UpdateMaskDisplay)
 }
 
-BtnGame := MyGui.Add("Button", "xm y+20 w120 h40", Lang["GameMode"])
-BtnGame.OnEvent("Click", SetGamePreset)
-BtnBack := MyGui.Add("Button", "x+10 w120 h40", Lang["BgLoad"])
-BtnBack.OnEvent("Click", SetBgPreset)
-BtnCustom := MyGui.Add("Button", "x+10 w120 h40", "低占用")
-BtnCustom.OnEvent("Click", SetCustomPreset)
+NameP1 := IniRead(IniFile, "Presets", "Name1", "Preset 1")
+NameP2 := IniRead(IniFile, "Presets", "Name2", "Preset 2")
+NameP3 := IniRead(IniFile, "Presets", "Name3", "Preset 3")
+
+BtnP1 := MyGui.Add("Button", "xm y+20 w120 h40", NameP1)
+BtnP1.OnEvent("Click", (*) => LoadPreset(1))
+BtnP2 := MyGui.Add("Button", "x+10 w120 h40", NameP2)
+BtnP2.OnEvent("Click", (*) => LoadPreset(2))
+BtnP3 := MyGui.Add("Button", "x+10 w120 h40", NameP3)
+BtnP3.OnEvent("Click", (*) => LoadPreset(3))
+
+MyGui.OnEvent("ContextMenu", ShowPresetMenu)
 
 MyGui.SetFont("s12 Bold cBlue", "Microsoft YaHei")
 MaskText := MyGui.Add("Text", "xm y+20 w380 Center", "Mask: 0xFFFFFFFF")
@@ -119,7 +133,14 @@ A_TrayMenu.Add(Lang["Show"], (*) => (RefreshMasterList(), MyGui.Show()))
 A_TrayMenu.Add(Lang["Exit"], (*) => ExitApp())
 A_TrayMenu.Default := Lang["Show"]
 
-if (Settings.Silent == 0) {
+isAutoStart := 0
+for arg in A_Args {
+    if (arg = "/AutoStart") {
+        isAutoStart := 1
+    }
+}
+
+if (Settings.Silent == 0 || isAutoStart == 0) {
     MyGui.Show()
 }
 
@@ -167,26 +188,12 @@ HandleProgChange(GuiCtrl, *) {
     
     ; 2. 识别历史策略
     try {
-        global CustomMode
-        customMode := Integer(IniRead(IniFile, userInput, "CustomMode", 0))
-        if (customMode == 1) {
-            CustomMode := 1
-            tMask := (1 << 0) | (1 << (TotalThreads - 1))
-            MaskText.Value := "Mask: 0x" . Format("{:08X}", tMask)
-            CheckCore0.Value := 0
-            CheckCCD0.Value := 0
-            CheckCCD1.Value := 0
-            CheckSMT.Value := 0
-            CheckHigh.Value := Integer(IniRead(IniFile, userInput, "High", 0))
-        } else {
-            CustomMode := 0
-            CheckCore0.Value := Integer(IniRead(IniFile, userInput, "Core0", 1))
-            CheckCCD0.Value  := Integer(IniRead(IniFile, userInput, "CCD0", 0))
-            CheckCCD1.Value  := Integer(IniRead(IniFile, userInput, "CCD1", 0))
-            CheckSMT.Value   := Integer(IniRead(IniFile, userInput, "SMT", 0))
-            CheckHigh.Value  := Integer(IniRead(IniFile, userInput, "High", 0))
-            UpdateMaskDisplay()
-        }
+        CheckCore0.Value := Integer(IniRead(IniFile, userInput, "Core0", 1))
+        CheckCCD0.Value  := Integer(IniRead(IniFile, userInput, "CCD0", 0))
+        CheckCCD1.Value  := Integer(IniRead(IniFile, userInput, "CCD1", 0))
+        CheckSMT.Value   := Integer(IniRead(IniFile, userInput, "SMT", 0))
+        CheckHigh.Value  := Integer(IniRead(IniFile, userInput, "High", 0))
+        UpdateMaskDisplay()
     }
     
     UpdateMaskDisplay()
@@ -285,34 +292,23 @@ ProcessMonitor() {
     wmi := ComObjGet("winmgmts:")
     Loop Parse, sections, "`n" {
         procName := A_LoopField
-        if (procName == "Global" || procName == "") {
+        if (procName == "Global" || procName == "Presets" || procName == "") {
             continue
         }
         
         processes := wmi.ExecQuery("Select ProcessId from Win32_Process Where Name = '" . procName . "'")
         if (processes.Count > 0) {
             try {
-                customMode := Integer(IniRead(IniFile, procName, "CustomMode", 0))
                 hi := Integer(IniRead(IniFile, procName, "High", 0))
-                if (customMode == 1) {
-                    tMask := 0
-                    tMask |= 1
-                    tMask |= (1 << (TotalThreads - 1))
-                } else {
-                    c0 := Integer(IniRead(IniFile, procName, "Core0", 1))
-                    cd0 := Integer(IniRead(IniFile, procName, "CCD0", 0))
-                    cd1 := Integer(IniRead(IniFile, procName, "CCD1", 0))
-                    sm := Integer(IniRead(IniFile, procName, "SMT", 0))
-                    tMask := CalculateMask(c0, cd0, cd1, sm)
-                }
+                c0 := Integer(IniRead(IniFile, procName, "Core0", 1))
+                cd0 := Integer(IniRead(IniFile, procName, "CCD0", 0))
+                cd1 := Integer(IniRead(IniFile, procName, "CCD1", 0))
+                sm := Integer(IniRead(IniFile, procName, "SMT", 0))
+                tMask := CalculateMask(c0, cd0, cd1, sm)
                 
                 for proc in processes {
                     try {
-                        if (customMode == 1) {
-                            ProcessSetPriority("Low", proc.ProcessId)
-                        } else {
-                            ProcessSetPriority((hi ? "High" : "Normal"), proc.ProcessId)
-                        }
+                        ProcessSetPriority((hi ? "High" : "Normal"), proc.ProcessId)
                     }
                     hProc := DllCall("OpenProcess", "UInt", 0x0400 | 0x0200 | 0x0040, "Int", false, "UInt", proc.ProcessId, "Ptr")
                     if (hProc) {
@@ -334,48 +330,65 @@ SaveConfig(*) {
     if (name == "") {
         return
     }
-    global CustomMode
+    
+    ; 防止给资源管理器等核心进程分配核心，导致所有子进程继承其相关性
+    lowerName := StrLower(name)
+    if (lowerName == "explorer.exe" || lowerName == "dwm.exe" || lowerName == "csrss.exe" || lowerName == "smss.exe" || lowerName == "winlogon.exe" || lowerName == "services.exe" || lowerName == "lsass.exe") {
+        MsgBox("警告：严禁修改 " name " 的核心分配！`n`n由于 Windows 的继承机制，修改 explorer.exe 等系统关键进程的核心分配，会导致您打开的所有未设置程序都自动继承该分配！`n`n请在配置文件中删除该程序的条目或恢复其默认核心分配。", AppName, "IconX")
+        return
+    }
+    
     IniWrite(CheckCore0.Value, IniFile, name, "Core0")
     IniWrite(CheckCCD0.Value,  IniFile, name, "CCD0")
     IniWrite(CheckCCD1.Value,  IniFile, name, "CCD1")
     IniWrite(CheckSMT.Value,   IniFile, name, "SMT")
     IniWrite(CheckHigh.Value,  IniFile, name, "High")
-    IniWrite(CustomMode, IniFile, name, "CustomMode")
-    CustomMode := 0
     RefreshMasterList()
 }
 
-SetGamePreset(*) {
-    ; 游戏模式：仅CCD0 + 关闭SMT + 高优先级 + (通常游戏不含核心0)
-    CheckCore0.Value := 0
-    CheckCCD0.Value := 1
-    CheckCCD1.Value := 0
-    CheckSMT.Value := 1
-    CheckHigh.Value := 1
-    UpdateMaskDisplay()
+LoadPreset(slot) {
+    try {
+        CheckCore0.Value := Integer(IniRead(IniFile, "Presets", "P" slot "_Core0", 1))
+        CheckCCD0.Value  := Integer(IniRead(IniFile, "Presets", "P" slot "_CCD0", 0))
+        CheckCCD1.Value  := Integer(IniRead(IniFile, "Presets", "P" slot "_CCD1", 0))
+        CheckSMT.Value   := Integer(IniRead(IniFile, "Presets", "P" slot "_SMT", 0))
+        CheckHigh.Value  := Integer(IniRead(IniFile, "Presets", "P" slot "_High", 0))
+        UpdateMaskDisplay()
+    }
 }
 
-SetBgPreset(*) {
-    ; 后台负载：含核心0 + 仅CCD1 + (保留SMT以增强多任务)
-    CheckCore0.Value := 1
-    CheckCCD0.Value := 0
-    CheckCCD1.Value := 1
-    CheckSMT.Value := 0
-    CheckHigh.Value := 0
-    UpdateMaskDisplay()
+ShowPresetMenu(GuiObj, GuiCtrl, Item, IsRightClick, X, Y) {
+    if (!GuiCtrl || (GuiCtrl != BtnP1 && GuiCtrl != BtnP2 && GuiCtrl != BtnP3))
+        return
+    
+    slot := (GuiCtrl == BtnP1) ? 1 : (GuiCtrl == BtnP2) ? 2 : 3
+    
+    m := Menu()
+    m.Add(Lang["SaveToPreset"], (*) => SavePreset(slot))
+    m.Add(Lang["RenamePreset"], (*) => RenamePreset(slot, GuiCtrl))
+    m.Show()
 }
 
-SetCustomPreset(*) {
-    global CustomMode := 1
-    mask := 0
-    mask |= 1
-    mask |= (1 << (TotalThreads - 1))
-    MaskText.Value := "Mask: 0x" . Format("{:08X}", mask) . " (核心0 + 核心" . (TotalThreads-1) . ")"
-    CheckCore0.Value := 0
-    CheckCCD0.Value := 0
-    CheckCCD1.Value := 0
-    CheckSMT.Value := 0
-    CheckHigh.Value := 0
+SavePreset(slot) {
+    global MyGui
+    MyGui.Opt("+OwnDialogs")
+    IniWrite(CheckCore0.Value, IniFile, "Presets", "P" slot "_Core0")
+    IniWrite(CheckCCD0.Value,  IniFile, "Presets", "P" slot "_CCD0")
+    IniWrite(CheckCCD1.Value,  IniFile, "Presets", "P" slot "_CCD1")
+    IniWrite(CheckSMT.Value,   IniFile, "Presets", "P" slot "_SMT")
+    IniWrite(CheckHigh.Value,  IniFile, "Presets", "P" slot "_High")
+    MsgBox(Lang["Saved"] " " slot, AppName, "T1")
+}
+
+RenamePreset(slot, ctrl) {
+    global MyGui
+    MyGui.Opt("+OwnDialogs")
+    currName := IniRead(IniFile, "Presets", "Name" slot, "Preset " slot)
+    ib := InputBox(Lang["EnterNewName"], AppName, "w300 h130", currName)
+    if (ib.Result == "OK" && ib.Value != "") {
+        IniWrite(ib.Value, IniFile, "Presets", "Name" slot)
+        ctrl.Text := ib.Value
+    }
 }
 
 ; ==============================================================================
@@ -383,16 +396,18 @@ SetCustomPreset(*) {
 ; ==============================================================================
 
 ToggleAutoStart(itemName, *) {
-    path := "HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
+    taskName := "Off-CCD_AutoStart"
     if (Settings.AutoStart == 1) {
         try {
-            RegDelete(path, AppName)
+            RunWait('schtasks /Delete /TN "' taskName '" /F', , "Hide")
         }
         Settings.AutoStart := 0
         SetMenu.Uncheck(itemName)
     } else {
         try {
-            RegWrite('"' . A_AhkPath . '" "' . A_ScriptFullPath . '"', "REG_SZ", path, AppName)
+            targetCmd := A_IsCompiled ? (A_ScriptFullPath '\" /AutoStart') : (A_AhkPath '\" \"' A_ScriptFullPath '\" /AutoStart')
+            cmd := 'schtasks /Create /TN "' taskName '" /TR "\"' targetCmd '" /SC ONLOGON /RL HIGHEST /F'
+            RunWait(cmd, , "Hide")
             Settings.AutoStart := 1
             SetMenu.Check(itemName)
         }
