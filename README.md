@@ -41,6 +41,7 @@ Off-CCD (OCCD) 是一款基于 AutoHotkey v2 的轻量级 CPU 相关性与优先
 1. 在程序的“设置”菜单中，**取消勾选“开机自启动”**（这会自动清除系统的计划任务）。
 2. 在“设置”菜单中点击“退出”彻底关闭程序。
 3. **重启电脑**（重启后，所有被修改过核心的程序都会自动恢复为 Windows 默认的全核心调度，不留任何后遗症）。
+   - *（可选）如果您不想重启电脑，也可以右键使用 PowerShell 运行项目中提供的 `Reset-Affinity.ps1` 脚本，即可一键强制将所有运行中的程序恢复为全核心默认状态。*
 4. 删除存放目录下的 `Off-CCD.exe` 和 `ProcessConfig.ini` 文件即可。
 
 ---
@@ -79,6 +80,7 @@ This is a portable application. CPU affinity changes are temporary and exist onl
 1. Open the app, go to the "Settings" menu, and **uncheck "Start on Boot"** (this automatically removes the Scheduled Task).
 2. Click "Exit" in the "Settings" menu to completely close the program.
 3. **Restart your computer** (rebooting clears the memory and resets all CPU affinities back to Windows defaults).
+   - *(Optional) If you don't want to restart your computer, you can right-click and "Run with PowerShell" the included `Reset-Affinity.ps1` script to instantly reset all running programs to their default state.*
 4. Delete the `Off-CCD.exe` executable and the generated `ProcessConfig.ini` configuration file.
 
 ---
