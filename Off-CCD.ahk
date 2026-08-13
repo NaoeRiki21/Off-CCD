@@ -454,19 +454,15 @@ RenamePreset(slot, ctrl) {
 ToggleAutoStart(itemName, *) {
     taskName := "Off-CCD_AutoStart"
     if (Settings.AutoStart == 1) {
-        try {
-            RunWait('schtasks /Delete /TN "' taskName '" /F', , "Hide")
-        }
+        try RunWait('schtasks /Delete /TN "' taskName '" /F', , "Hide")
         Settings.AutoStart := 0
         SetMenu.Uncheck(itemName)
     } else {
-        try {
-            targetCmd := A_IsCompiled ? (A_ScriptFullPath '\" /AutoStart') : (A_AhkPath '\" \"' A_ScriptFullPath '\" /AutoStart')
-            cmd := 'schtasks /Create /TN "' taskName '" /TR "\"' targetCmd '" /SC ONLOGON /RL HIGHEST /F'
-            RunWait(cmd, , "Hide")
-            Settings.AutoStart := 1
-            SetMenu.Check(itemName)
-        }
+        targetCmd := A_IsCompiled ? ('\"' A_ScriptFullPath '\" /AutoStart') : ('\"' A_AhkPath '\" \"' A_ScriptFullPath '\" /AutoStart')
+        cmd := 'schtasks /Create /TN "' taskName '" /TR "' targetCmd '" /SC ONLOGON /RL HIGHEST /F'
+        try RunWait(cmd, , "Hide")
+        Settings.AutoStart := 1
+        SetMenu.Check(itemName)
     }
 }
 
