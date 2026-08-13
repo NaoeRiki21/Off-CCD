@@ -24,14 +24,14 @@ InitLanguage(l) {
         Lang["AutoStart"] := "开机自启动", Lang["SilentStart"] := "静默启动", Lang["HideTray"] := "隐藏托盘图标"
         Lang["Settings"] := "设置", Lang["Lang"] := "语言", Lang["Target"] := "目标程序:"
         Lang["Core0"] := "含核心0", Lang["CCD0"] := "仅CCD0", Lang["CCD1"] := "仅CCD1"
-        Lang["SMT"] := "禁用超线程", Lang["HighPri"] := "高优先级"
+        Lang["SMT"] := "禁用超线程", Lang["HighPri"] := "高优先级", Lang["LowPri"] := "低优先级", Lang["OnlyCore0"] := "仅核心0"
         Lang["SaveToPreset"] := "保存到该预设", Lang["RenamePreset"] := "重命名预设", Lang["Saved"] := "保存成功", Lang["Save"] := "保存配置", Lang["EnterNewName"] := "请输入新名称："
         Lang["Show"] := "显示界面", Lang["Exit"] := "退出"
     } else {
         Lang["AutoStart"] := "Start on Boot", Lang["SilentStart"] := "Silent Start", Lang["HideTray"] := "Hide Tray Icon"
         Lang["Settings"] := "Settings", Lang["Lang"] := "Language", Lang["Target"] := "Target Process:"
         Lang["Core0"] := "Incl Core0", Lang["CCD0"] := "Only CCD0", Lang["CCD1"] := "Only CCD1"
-        Lang["SMT"] := "Disable SMT", Lang["HighPri"] := "High Priority"
+        Lang["SMT"] := "Disable SMT", Lang["HighPri"] := "High Priority", Lang["LowPri"] := "Low Priority", Lang["OnlyCore0"] := "Only Core0"
         Lang["SaveToPreset"] := "Save to Preset", Lang["RenamePreset"] := "Rename", Lang["Saved"] := "Saved Successfully", Lang["Save"] := "Save Config", Lang["EnterNewName"] := "Enter new name:"
         Lang["Show"] := "Show UI", Lang["Exit"] := "Exit"
     }
@@ -102,8 +102,10 @@ CheckCCD1  := MyGui.Add("Checkbox", "vCCD1 x+20", Lang["CCD1"])
 CheckCore0 := MyGui.Add("Checkbox", "vCore0 x+20", Lang["Core0"])
 CheckSMT   := MyGui.Add("Checkbox", "vSMT x+20", Lang["SMT"])
 CheckHigh  := MyGui.Add("Checkbox", "vHigh xm y+10", Lang["HighPri"]) ; 换行显示更清晰
+CheckLow   := MyGui.Add("Checkbox", "vLow x+20", Lang["LowPri"])
+CheckOnlyCore0 := MyGui.Add("Checkbox", "vOnlyCore0 x+20", Lang["OnlyCore0"])
 
-for ctrl in [CheckCore0, CheckCCD0, CheckCCD1, CheckSMT] {
+for ctrl in [CheckCore0, CheckCCD0, CheckCCD1, CheckSMT, CheckOnlyCore0, CheckHigh, CheckLow] {
     ctrl.OnEvent("Click", UpdateMaskDisplay)
 }
 
@@ -143,6 +145,14 @@ for arg in A_Args {
 if (Settings.Silent == 0 || isAutoStart == 0) {
     MyGui.Show()
 }
+
+SanitizeConfig() {
+    blockList := ["explorer.exe", "dwm.exe", "csrss.exe", "smss.exe", "winlogon.exe", "services.exe", "lsass.exe"]
+    for proc in blockList {
+        try IniDelete(IniFile, proc)
+    }
+}
+SanitizeConfig()
 
 SetTimer(ProcessMonitor, 3000)
 
@@ -193,6 +203,8 @@ HandleProgChange(GuiCtrl, *) {
         CheckCCD1.Value  := Integer(IniRead(IniFile, userInput, "CCD1", 0))
         CheckSMT.Value   := Integer(IniRead(IniFile, userInput, "SMT", 0))
         CheckHigh.Value  := Integer(IniRead(IniFile, userInput, "High", 0))
+        CheckLow.Value   := Integer(IniRead(IniFile, userInput, "Low", 0))
+        CheckOnlyCore0.Value := Integer(IniRead(IniFile, userInput, "OnlyCore0", 0))
         UpdateMaskDisplay()
     }
     
@@ -235,7 +247,10 @@ RefreshMasterList() {
 ; 核心 Mask 运算逻辑 (更新双CCD逻辑)
 ; ==============================================================================
 
-CalculateMask(c0, ccd0, ccd1, smt) {
+CalculateMask(c0, ccd0, ccd1, smt, onlyC0 := 0) {
+    if (onlyC0 == 1) {
+        return 1
+    }
     half := TotalThreads // 2
     mask := 0
     
@@ -274,8 +289,34 @@ CalculateMask(c0, ccd0, ccd1, smt) {
 }
 
 UpdateMaskDisplay(*) {
-    mask := CalculateMask(CheckCore0.Value, CheckCCD0.Value, CheckCCD1.Value, CheckSMT.Value)
+    mask := CalculateMask(CheckCore0.Value, CheckCCD0.Value, CheckCCD1.Value, CheckSMT.Value, CheckOnlyCore0.Value)
     MaskText.Value := "Mask: 0x" . Format("{:08X}", mask)
+    
+    if (CheckOnlyCore0.Value) {
+        CheckCore0.Enabled := false
+        CheckCCD0.Enabled := false
+        CheckCCD1.Enabled := false
+        CheckSMT.Enabled := false
+    } else {
+        CheckCore0.Enabled := true
+        CheckCCD0.Enabled := true
+        CheckCCD1.Enabled := true
+        CheckSMT.Enabled := true
+    }
+
+    if (CheckHigh.Value) {
+        CheckLow.Value := 0
+        CheckLow.Enabled := false
+    } else {
+        CheckLow.Enabled := true
+    }
+
+    if (CheckLow.Value) {
+        CheckHigh.Value := 0
+        CheckHigh.Enabled := false
+    } else {
+        CheckHigh.Enabled := true
+    }
 }
 
 ProcessMonitor() {
@@ -300,15 +341,24 @@ ProcessMonitor() {
         if (processes.Count > 0) {
             try {
                 hi := Integer(IniRead(IniFile, procName, "High", 0))
+                lo := Integer(IniRead(IniFile, procName, "Low", 0))
                 c0 := Integer(IniRead(IniFile, procName, "Core0", 1))
                 cd0 := Integer(IniRead(IniFile, procName, "CCD0", 0))
                 cd1 := Integer(IniRead(IniFile, procName, "CCD1", 0))
                 sm := Integer(IniRead(IniFile, procName, "SMT", 0))
-                tMask := CalculateMask(c0, cd0, cd1, sm)
+                oc0 := Integer(IniRead(IniFile, procName, "OnlyCore0", 0))
+                tMask := CalculateMask(c0, cd0, cd1, sm, oc0)
+                
+                pri := "Normal"
+                if (hi) {
+                    pri := "High"
+                } else if (lo) {
+                    pri := "BelowNormal"
+                }
                 
                 for proc in processes {
                     try {
-                        ProcessSetPriority((hi ? "High" : "Normal"), proc.ProcessId)
+                        ProcessSetPriority(pri, proc.ProcessId)
                     }
                     hProc := DllCall("OpenProcess", "UInt", 0x0400 | 0x0200 | 0x0040, "Int", false, "UInt", proc.ProcessId, "Ptr")
                     if (hProc) {
@@ -343,6 +393,8 @@ SaveConfig(*) {
     IniWrite(CheckCCD1.Value,  IniFile, name, "CCD1")
     IniWrite(CheckSMT.Value,   IniFile, name, "SMT")
     IniWrite(CheckHigh.Value,  IniFile, name, "High")
+    IniWrite(CheckLow.Value,   IniFile, name, "Low")
+    IniWrite(CheckOnlyCore0.Value, IniFile, name, "OnlyCore0")
     RefreshMasterList()
 }
 
@@ -353,6 +405,8 @@ LoadPreset(slot) {
         CheckCCD1.Value  := Integer(IniRead(IniFile, "Presets", "P" slot "_CCD1", 0))
         CheckSMT.Value   := Integer(IniRead(IniFile, "Presets", "P" slot "_SMT", 0))
         CheckHigh.Value  := Integer(IniRead(IniFile, "Presets", "P" slot "_High", 0))
+        CheckLow.Value   := Integer(IniRead(IniFile, "Presets", "P" slot "_Low", 0))
+        CheckOnlyCore0.Value := Integer(IniRead(IniFile, "Presets", "P" slot "_OnlyCore0", 0))
         UpdateMaskDisplay()
     }
 }
@@ -377,6 +431,8 @@ SavePreset(slot) {
     IniWrite(CheckCCD1.Value,  IniFile, "Presets", "P" slot "_CCD1")
     IniWrite(CheckSMT.Value,   IniFile, "Presets", "P" slot "_SMT")
     IniWrite(CheckHigh.Value,  IniFile, "Presets", "P" slot "_High")
+    IniWrite(CheckLow.Value,   IniFile, "Presets", "P" slot "_Low")
+    IniWrite(CheckOnlyCore0.Value, IniFile, "Presets", "P" slot "_OnlyCore0")
     MsgBox(Lang["Saved"] " " slot, AppName, "T1")
 }
 
